@@ -1,25 +1,25 @@
 升级流程：
     step1: 准备工作。
-             统计hbase2.1.1版本和hbase1.2.6配置文件的差异性。
-	             提供hbase2.1.1部署包。
-		         step2:修复hbase1.2.6版本的rit状态
-			         首先修复集群的rit状态的region。
-				     step3:修改BM配置
-				            将hbase2.1.1配置需要修改的地方，增加到BM。
-					        step4:整体停止集群
-						       通过BM将集群整体停掉。
-						           step5:替换包
-							          ansible整体替换包，并修改权限到hbase（如有必要）
-								      step6:整体启动集群
-								             整体启动集群
-									     遇到的问题：
-									         1、 在启动流程的时候遇到meta表无法online的过程，导致master初始化stuck无法完成。同时伴随的现象是regionserver的report rpc向master 16000端口汇报失败。
-										            meta表无法online原因：hbase.balancer.tablesOnMaster设置为hbase:meta,hbase:namespace，又正巧集群master节点没有部署regionserver，导致meta表无法分配使得初始化过程stuck。
-											              regionserver rpc report失败问题： 测试集群复盘没有看到regionserver的report rpc连接master 16000端口失败的情况。这个暂时无法分析。
-												                解决方案：将hbase.balancer.tablesOnMaster设置为none,重启master节点。  （如果设置为none,而且hbase:meta 一直显示rit=OPEN 但是一致无法分配，建议用1.2.6master  将meta表分配给2.1.1的一个regionserver节点，然后升级master。）
-														     2、将tablesOnMaster设置为none之后，出现hbase:namespace无法分配到regionserver的问题。
-														               原因：在整体之前尝试滚动升级，使用了assignment.usezk=false的情况，造成hbase:meta中存在部分region存在info:state的问题。此时hbase:meta表中namespace对应的region的状态为OPEN,所以不会再尝试重新分配该region。造成一直在等待之前时间戳版本的regionserver。
-															                 解决方案：修改meta表中namespace的info:state列value为OFFLINE。（之前尝试删除该列，但是由于hbase:meta是存三个版本的，OPEN之前的版本是PENDING_OPEN，造成出现PENDING_OPEN的情况，但是hbase2.1.1版本中已将该状态移除改为OPENING，所以出现找不到PENDING_OPEN的对应的value的问题。）  
-																	     3、集群启动后使用balancer的过程中发现某一个节点已经有44个region已经处于OPEN状态，但是regionserver时间戳版本不一致的问题。导致balancer出现问题。
-																	             原因：与问题2一致。
-																		             解决方案：由于此时master已经正常启动完毕，通过assign命令，将44个region重新分配就好了。
+           统计hbase2.1.1版本和hbase1.2.6配置文件的差异性。
+	   提供hbase2.1.1部署包。
+    step2:修复hbase1.2.6版本的rit状态
+          首先修复集群的rit状态的region。
+    step3:修改BM配置
+          将hbase2.1.1配置需要修改的地方，增加到BM。
+    step4:整体停止集群
+          通过BM将集群整体停掉。
+    step5:替换包
+          ansible整体替换包，并修改权限到hbase（如有必要）
+    step6:整体启动集群
+          整体启动集群
+遇到的问题：
+    1、 在启动流程的时候遇到meta表无法online的过程，导致master初始化stuck无法完成。同时伴随的现象是regionserver的report rpc向master 16000端口汇报失败。
+        meta表无法online原因：hbase.balancer.tablesOnMaster设置为hbase:meta,hbase:namespace，又正巧集群master节点没有部署regionserver，导致meta表无法分配使得初始化过程stuck。
+        regionserver rpc report失败问题： 测试集群复盘没有看到regionserver的report rpc连接master 16000端口失败的情况。这个暂时无法分析。
+        解决方案：将hbase.balancer.tablesOnMaster设置为none,重启master节点。  （如果设置为none,而且hbase:meta 一直显示rit=OPEN 但是一致无法分配，建议用1.2.6master  将meta表分配给2.1.1的一个regionserver节点，然后升级master。）
+    2、将tablesOnMaster设置为none之后，出现hbase:namespace无法分配到regionserver的问题。
+        原因：在整体之前尝试滚动升级，使用了assignment.usezk=false的情况，造成hbase:meta中存在部分region存在info:state的问题。此时hbase:meta表中namespace对应的region的状态为OPEN,所以不会再尝试重新分配该region。造成一直在等待之前时间戳版本的regionserver。
+        解决方案：修改meta表中namespace的info:state列value为OFFLINE。（之前尝试删除该列，但是由于hbase:meta是存三个版本的，OPEN之前的版本是PENDING_OPEN，造成出现PENDING_OPEN的情况，但是hbase2.1.1版本中已将该状态移除改为OPENING，所以出现找不到PENDING_OPEN的对应的value的问题。）  
+    3、集群启动后使用balancer的过程中发现某一个节点已经有44个region已经处于OPEN状态，但是regionserver时间戳版本不一致的问题。导致balancer出现问题。
+       原因：与问题2一致。
+       解决方案：由于此时master已经正常启动完毕，通过assign命令，将44个region重新分配就好了。
