@@ -14,10 +14,12 @@
           整体启动集群
 遇到的问题：
     1、 在启动流程的时候遇到meta表无法online的过程，导致master初始化stuck无法完成。同时伴随的现象是regionserver的report rpc向master 16000端口汇报失败。
-        meta表无法online原因：hbase.balancer.tablesOnMaster设置为hbase:meta,hbase:namespace，又正巧集群master节点没有部署regionserver，导致meta表无法分配使得初始化过程stuck。
-        regionserver rpc report失败问题： 测试集群复盘没有看到regionserver的report rpc连接master 16000端口失败的情况。这个暂时无法分析。
-        解决方案：将hbase.balancer.tablesOnMaster设置为none,重启master节点。  （如果设置为none,而且hbase:meta 一直显示rit=OPEN 但是一致无法分配，delete zk meta-region-server znode)
-    2、将tablesOnMaster设置为none之后，出现hbase:namespace无法分配到regionserver的问题。
+        regionserver reportheartbeat timeout 问题：由于启动过程中存在一些get请求（这个从哪里来不重要，maybe client thrift）。导致regionserver已经与master建立了连接但是master阻塞在get请求openRegion阶段（meta表没有分配，所以需要重试46次，这个大约要12分钟左右，如果get request  timeout 并且被drop之后，report请求点比较背没有占据一个handler的话，就一直等）。
+        meta表无法online原因：没有regionserver可以分配。
+        解决方案：
+		建议整体升级之前停止业务。记住停thrift、rest等。
+		升级过程中建议暂时性的调大 regionserver rpc handler数量。（hbase.regionserver.handler.count  default 30)。
+    2、meta表分配之后，出现hbase:namespace无法分配到regionserver的问题。
         原因：在整体之前尝试滚动升级，使用了assignment.usezk=false的情况，造成hbase:meta中存在部分region存在info:state的问题。此时hbase:meta表中namespace对应的region的状态为OPEN,所以不会再尝试重新分配该region。造成一直在等待之前时间戳版本的regionserver。
         解决方案：修改meta表中namespace的info:state列value为OFFLINE。（之前尝试删除该列，但是由于hbase:meta是存三个版本的，OPEN之前的版本是PENDING_OPEN，造成出现PENDING_OPEN的情况，但是hbase2.1.1版本中已将该状态移除改为OPENING，所以出现找不到PENDING_OPEN的对应的value的问题。）  
     3、集群启动后使用balancer的过程中发现某一个节点已经有44个region已经处于OPEN状态，但是regionserver时间戳版本不一致的问题。导致balancer出现问题。
